@@ -90,10 +90,15 @@ public:
     QLineEdit *lineEdit_10;
     QComboBox *comboBox;
     QTcpSocket* tcpSocket;
+    QLineEdit *lineEdit_12;
+    QLabel *label_12;
+    QPushButton *pushButton_12;
 
     void setupUi(QWidget* Form)
     {
         tcpSocket = new QTcpSocket(this);
+        connect(tcpSocket, &QTcpSocket::readyRead, this, &Ui_Form::readData);
+        connectToServer("127.0.0.1", 12345);
         if (Form->objectName().isEmpty())
             Form->setObjectName("Form");
         Form->resize(356, 494);
@@ -203,11 +208,15 @@ public:
         connect(pushButton_5, &QPushButton::clicked, this, &Ui_Form::show_manage_ui);
         widget_4 = new QWidget(widget);
         widget_4->setObjectName("widget_4");
-        widget_4->setGeometry(QRect(40, 160, 271, 301));
+        widget_4->setGeometry(QRect(40, 160, 271, 401));
         pushButton_7 = new QPushButton(widget_4);
         pushButton_7->setObjectName("pushButton_7");
         pushButton_7->setGeometry(QRect(50, 160, 171, 24));
-        connect(pushButton_7, &QPushButton::clicked, this, &Ui_Form::loginmanager);
+        connect(pushButton_7, &QPushButton::clicked, this, &Ui_Form::getotp);
+        pushButton_12 = new QPushButton(widget_4);
+        pushButton_12->setObjectName("pushButton_12");
+        pushButton_12->setGeometry(QRect(50, 220, 171, 24));
+        connect(pushButton_12, &QPushButton::clicked, this, &Ui_Form::sendOTP);
         layoutWidget2 = new QWidget(widget_4);
         layoutWidget2->setObjectName("layoutWidget2");
         layoutWidget2->setGeometry(QRect(20, 50, 231, 91));
@@ -233,6 +242,16 @@ public:
         lineEdit_7->setObjectName("lineEdit_7");
 
         gridLayout_3->addWidget(lineEdit_7, 1, 1, 1, 1);
+
+        label_12 = new QLabel(layoutWidget2);
+        label_12->setObjectName("label_12");
+
+        gridLayout_3->addWidget(label_12, 2, 0, 1, 1);
+
+        lineEdit_12 = new QLineEdit(layoutWidget2);
+        lineEdit_12->setObjectName("lineEdit_12");
+
+        gridLayout_3->addWidget(lineEdit_12, 2, 1, 1, 1);
 
         widget_5 = new QWidget(widget);
         widget_5->setObjectName("widget_5");
@@ -306,13 +325,15 @@ public:
         label_4->setText(QCoreApplication::translate("Form", "\345\257\206\347\240\201", nullptr));
         label_5->setText(QCoreApplication::translate("Form", "\347\241\256\350\256\244\345\257\206\347\240\201", nullptr));
         pushButton_5->setText(QCoreApplication::translate("Form", "\347\256\241\347\220\206\345\221\230", nullptr));
-        pushButton_7->setText(QCoreApplication::translate("Form", "\347\231\273\345\275\225", nullptr));
+        pushButton_7->setText(QCoreApplication::translate("Form", "\u83b7\u53d6otp", nullptr));
         label_7->setText(QCoreApplication::translate("Form", "\347\256\241\347\220\206\345\221\230\350\264\246\345\217\267", nullptr));
         label_6->setText(QCoreApplication::translate("Form", "\347\256\241\347\220\206\345\221\230\345\257\206\347\240\201", nullptr));
         pushButton_8->setText(QCoreApplication::translate("Form", "\347\231\273\345\275\225", nullptr));
         label_8->setText(QCoreApplication::translate("Form", "\350\264\246\345\217\267", nullptr));
         label_9->setText(QCoreApplication::translate("Form", "\344\277\256\346\224\271\345\257\206\347\240\201", nullptr));
         label_10->setText(QCoreApplication::translate("Form", "\u65e7\u5bc6\u7801", nullptr));
+        pushButton_12->setText(QCoreApplication::translate("Form", "\347\231\273\345\275\225", nullptr));
+        label_12->setText(QCoreApplication::translate("Form", "OTP", nullptr));
     } // retranslateUi
 
     void show_login_ui()
@@ -346,41 +367,75 @@ public:
     }
 
 
-
+    void sendOTP(){
+        QString username = lineEdit_6->text();
+        QString password = lineEdit_7->text();
+        QString OTP = lineEdit_12->text();
+        if (tcpSocket->state() == QAbstractSocket::ConnectedState) {
+            QTextStream out(tcpSocket);
+            out << "OTP:" << OTP << ":" << username << ":" << password <<"\n";
+            out.flush();
+        }
+        else {
+            qWarning() << "没有连接到服务器，无法发送";
+        }
+        readData();
+    }
     void sendCredentials(const QString& username, const QString& password)
     {
         if (tcpSocket->state() == QAbstractSocket::ConnectedState) {
             QTextStream out(tcpSocket);
-            out << username << ":" << password << "\n";
+            out << "USERNAME:" << username << ":" << password << "\n";
             out.flush();
         }
         else {
-            qWarning() << "Not connected to server, cannot send credentials";
+            qWarning() << "没有连接到服务器，无法发送";
         }
     }
+    void sendCurrentTime() {
+        QDateTime currentTime = QDateTime::currentDateTime();
+        QString formattedTime = currentTime.toString("yyyy-MM-dd HH:mm:ss");
+        QTextStream out(tcpSocket);
+        out << "CLIENT_TIME\n" << formattedTime << "\n";
+        out.flush();
+    }
+    int readData() {
+        QTextStream in(tcpSocket);
+        QString request = in.readLine().trimmed();
 
+        if (request == "REQUEST_TIME") {
+            sendCurrentTime();
+        } else if (request.startsWith("USERNAME:")) {
+            // Handle login response if needed
+            QMessageBox::information(nullptr, "Title", request);
+            qDebug() << "\u6536\u5230\u767b\u5f55\u8bf7\u6c42:" << request;
+            return 0;
+        } else if(request.startsWith("OTP:")){
+            int a = receiveResponse(request);
+            loginmanager(a);
+        }
+        else {
+            qDebug() << "未知请求:" << request;
+        }
+    }
 
     void connectToServer(const QString& host, quint16 port)
     {
         tcpSocket->connectToHost(host, port);
-        if (!tcpSocket->waitForConnected(3)) { // ???3??????
-            qWarning() << "Failed to connect to server:" << tcpSocket->errorString();
+        if (!tcpSocket->waitForConnected(100)) { // ???3??????
+            qWarning() << "连接到服务器失败:" << tcpSocket->errorString();
         }
         else {
-            qDebug() << "Connected to server";
+            qDebug() << "连接到服务器";
         }
     }
     void disconnectFromServer() {
         tcpSocket->disconnectFromHost();
     }
-    int receiveResponse()
+    int receiveResponse(QString request)
     {
-        // ???? tcpSocket ??????????????????? QTcpSocket ????
-        while (tcpSocket->canReadLine()) {
-            QString response = QString::fromUtf8(tcpSocket->readLine()).trimmed();
-            qDebug() << "Received response:" << response;
-
-            // ????????????????д???
+        QStringList parts = request.split(":", Qt::SkipEmptyParts);
+        QString response = parts[1];
             if (response == "1") {
                 // ????????????????
                 return 1;
@@ -393,7 +448,6 @@ public:
                 // ???????????????
                 return 0;
             }
-        }
     }
 
 
@@ -471,16 +525,17 @@ public:
             }
         }
     }
-    void loginmanager() {
-
-        connectToServer("127.0.0.1", 12345);
-
+    void getotp(){
         if (tcpSocket->state() == QAbstractSocket::ConnectedState) {
             QString username = lineEdit_6->text();
             QString password = lineEdit_7->text();
             sendCredentials(username, password);
-            int response = receiveResponse();
-            qDebug() << "Raw response:" << response;
+            readData();
+        }
+
+
+    }
+    void loginmanager(int response) {
 
             if (response == 1) {
                 QMessageBox::information(nullptr, "Login Success", "Login success!");
@@ -488,9 +543,7 @@ public:
                 UI_Form* uiForm = new UI_Form(); 
                 uiForm->setupUi(uiForm);
                 uiForm->show(); 
-
             }
-            
             else if (response == 2) {
                 QMessageBox::information(nullptr, "Login Success", "Login success!");
                 this->close();
@@ -506,11 +559,6 @@ public:
                     exit(0);
                 }
             }
-        }
-
-
-
-
     }
 
     void registerUsers() {
