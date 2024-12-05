@@ -93,6 +93,12 @@ public:
     QLineEdit *lineEdit_12;
     QLabel *label_12;
     QPushButton *pushButton_12;
+    QLineEdit *lineEdit_13;
+    QLabel *label_13;
+    QPushButton *pushButton_13;
+    QLineEdit *lineEdit_14;
+    QLabel *label_14;
+    QPushButton *pushButton_14;
 
     void setupUi(QWidget* Form)
     {
@@ -107,11 +113,15 @@ public:
         widget->setGeometry(QRect(0, 0, 351, 491));
         widget_2 = new QWidget(widget);
         widget_2->setObjectName("widget_2");
-        widget_2->setGeometry(QRect(10, 190, 331, 281));
+        widget_2->setGeometry(QRect(10, 190, 351, 281));
         pushButton = new QPushButton(widget_2);
         pushButton->setObjectName("pushButton");
-        pushButton->setGeometry(QRect(40, 200, 251, 41));
+        pushButton->setGeometry(QRect(40, 200, 251, 31));
         connect(pushButton, &QPushButton::clicked, this, &Ui_Form::login);
+        pushButton_13 = new QPushButton(widget_2);
+        pushButton_13->setObjectName("pushButton_13");
+        pushButton_13->setGeometry(QRect(40, 240, 251, 31));
+        connect(pushButton_13, &QPushButton::clicked, this, &Ui_Form::sendOTP2);
         layoutWidget = new QWidget(widget_2);
         layoutWidget->setObjectName("layoutWidget");
         layoutWidget->setGeometry(QRect(40, 30, 251, 121));
@@ -137,6 +147,16 @@ public:
         lineEdit_2->setObjectName("lineEdit_2");
 
         gridLayout_2->addWidget(lineEdit_2, 1, 1, 1, 1);
+        label_13 = new QLabel(layoutWidget);
+        label_13->setObjectName("label_13");
+
+        gridLayout_2->addWidget(label_13, 2, 0, 1, 1);
+
+        lineEdit_13 = new QLineEdit(layoutWidget);
+        lineEdit_13->setObjectName("lineEdit_13");
+
+        gridLayout_2->addWidget(lineEdit_13, 2, 1, 1, 1);
+
 
         pushButton_6 = new QPushButton(widget_2);
         pushButton_6->setObjectName("pushButton_6");
@@ -157,6 +177,10 @@ public:
         pushButton_4->setObjectName("pushButton_4");
         pushButton_4->setGeometry(QRect(40, 220, 251, 41));
         connect(pushButton_4, &QPushButton::clicked, this, &Ui_Form::registerUsers);
+        pushButton_14 = new QPushButton(widget_3);
+        pushButton_14->setObjectName("pushButton_14");
+        pushButton_14->setGeometry(QRect(250, 190, 100, 30));
+        connect(pushButton_14, &QPushButton::clicked, this, &Ui_Form::sendrequest);
         layoutWidget1 = new QWidget(widget_3);
         layoutWidget1->setObjectName("layoutWidget1");
         layoutWidget1->setGeometry(QRect(40, 30, 251, 171));
@@ -201,6 +225,16 @@ public:
         comboBox->addItem("SecurityAdministrator");
 
         gridLayout->addWidget(comboBox, 3, 1, 1, 1);
+
+        label_14 = new QLabel(layoutWidget1);
+        label_14->setObjectName("label_14");
+
+        gridLayout->addWidget(label_14, 4, 0, 1, 1);
+
+        lineEdit_14 = new QLineEdit(layoutWidget1);
+        lineEdit_14->setObjectName("lineEdit_14");
+
+        gridLayout->addWidget(lineEdit_14, 4, 1, 1, 1);
 
         pushButton_5 = new QPushButton(widget);
         pushButton_5->setObjectName("pushButton_5");
@@ -314,7 +348,7 @@ public:
     void retranslateUi(QWidget* Form)
     {
         Form->setWindowTitle(QCoreApplication::translate("Form", "Form", nullptr));
-        pushButton->setText(QCoreApplication::translate("Form", "\347\231\273\345\275\225", nullptr));
+        pushButton->setText(QCoreApplication::translate("Form", "\u83b7\u53d6otp", nullptr));
         label->setText(QCoreApplication::translate("Form", "\350\264\246\345\217\267", nullptr));
         label_2->setText(QCoreApplication::translate("Form", "\345\257\206\347\240\201", nullptr));
         pushButton_6->setText(QCoreApplication::translate("Form", "\345\277\230\350\256\260\345\257\206\347\240\201", nullptr));
@@ -334,6 +368,10 @@ public:
         label_10->setText(QCoreApplication::translate("Form", "\u65e7\u5bc6\u7801", nullptr));
         pushButton_12->setText(QCoreApplication::translate("Form", "\347\231\273\345\275\225", nullptr));
         label_12->setText(QCoreApplication::translate("Form", "OTP", nullptr));
+        label_13->setText(QCoreApplication::translate("Form", "OTP", nullptr));
+        pushButton_13->setText(QCoreApplication::translate("Form", "\347\231\273\345\275\225", nullptr));
+        label_14->setText(QCoreApplication::translate("Form", "OTP", nullptr));
+        pushButton_14->setText(QCoreApplication::translate("Form", "\u83b7\u53d6otp", nullptr));
     } // retranslateUi
 
     void show_login_ui()
@@ -366,7 +404,25 @@ public:
         widget_5->hide();
     }
 
-
+    void sendOTP2(){
+        QString username = lineEdit->text();
+        QString password = lineEdit_2->text();
+        QString OTP = lineEdit_13->text();
+        if (tcpSocket->state() == QAbstractSocket::ConnectedState) {
+            QTextStream out(tcpSocket);
+            out << "OTP:" << OTP << ":" << username << ":" << password <<"\n";
+            out.flush();
+        }
+        else {
+            qWarning() << "没有连接到服务器，无法发送";
+        }
+        i++;
+        if (i == 4) {
+            QMessageBox::warning(nullptr, "Login Failed", "Too many failed attempts. Please try again later.");
+            exit(0);
+        }
+        readData();
+    }
     void sendOTP(){
         QString username = lineEdit_6->text();
         QString password = lineEdit_7->text();
@@ -392,6 +448,19 @@ public:
             qWarning() << "没有连接到服务器，无法发送";
         }
     }
+    void sendrequest()
+    {
+        QString username = lineEdit_4->text();
+        QString password = lineEdit_5->text();
+        if (tcpSocket->state() == QAbstractSocket::ConnectedState) {
+            QTextStream out(tcpSocket);
+            out << "GETOTP:" << username << ":" << password << "\n";
+            out.flush();
+        }
+        else {
+            qWarning() << "没有连接到服务器，无法发送";
+        }
+    }
     void sendCurrentTime() {
         QDateTime currentTime = QDateTime::currentDateTime();
         QString formattedTime = currentTime.toString("yyyy-MM-dd HH:mm:ss");
@@ -411,8 +480,20 @@ public:
             qDebug() << "\u6536\u5230\u767b\u5f55\u8bf7\u6c42:" << request;
             return 0;
         } else if(request.startsWith("OTP:")){
-            int a = receiveResponse(request);
-            loginmanager(a);
+            QStringList parts2 = request.split(":", Qt::SkipEmptyParts);
+            if(parts2.size()==2){
+                int a = parts2[1].toInt();
+                if( a == 1 ){
+                    loginmanager(a);
+                }
+                else if(a == 2){
+                    loginmanager(a);
+                }
+                else if(a == 3){
+                    QMessageBox::information(nullptr, "Title", "success");
+                    return 0;
+                }
+            }
         }
         else {
             qDebug() << "未知请求:" << request;
@@ -488,17 +569,20 @@ public:
 
 
 
-    bool registerUser(QSqlDatabase& db, const QString& username, const QString& password,const QString& confirmPassword, const QString& quanxian) {
+    bool registerUser(QSqlDatabase& db, const QString& username, const QString& password,const QString& confirmPassword, const QString& quanxian,const QString& N,const QString& otp) {
         QDateTime registrationTime = QDateTime::currentDateTime();
         QSqlQuery query(db);
         QString hashedPassword = QCryptographicHash::hash(password.toUtf8(), QCryptographicHash::Sha256).toHex();
-        QString sql = "INSERT INTO Table_3 (username, password,time,ypwd,quanxian) VALUES (:username, :password, :time, :ypwd, :quanxian)";
+        QString hashedPassword2 = QCryptographicHash::hash(otp.toUtf8(), QCryptographicHash::Sha256).toHex();
+        QString sql = "INSERT INTO Table_3 (username, password,time,ypwd,quanxian,N,otp) VALUES (:username, :password, :time, :ypwd, :quanxian,:N,:otp)";
         query.prepare(sql);
         query.bindValue(":username", username);
         query.bindValue(":password", hashedPassword);
         query.bindValue(":time", registrationTime.toString("yyyy-MM-dd HH:mm:ss"));
         query.bindValue(":ypwd", confirmPassword);
         query.bindValue(":quanxian", quanxian);
+        query.bindValue(":N", N);
+        query.bindValue(":otp", hashedPassword2);
         if (!query.exec()) {
             qDebug() << "Error: User registration failed." << query.lastError().text();
             return false;
@@ -508,23 +592,13 @@ public:
     }
 
     void login() {
-        QSqlDatabase db = QSqlDatabase::database();
-        if (db.isValid()) {
+
             QString username = lineEdit->text();
             QString password = lineEdit_2->text();
-            if (loginUser(db, username, password)) {
-                QMessageBox::information(nullptr, "Login Success", "Login success!");
-            }
-            else {
-                QMessageBox::warning(nullptr, "Login Failed", "Incorrect username or password.");
-                i++;
-                if (i == 3) {
-                    QMessageBox::warning(nullptr, "Login Failed", "Too many failed attempts. Please try again later.");
-                    exit(0);
-                }
-            }
-        }
+            sendCredentials(username,password);
+
     }
+
     void getotp(){
         if (tcpSocket->state() == QAbstractSocket::ConnectedState) {
             QString username = lineEdit_6->text();
@@ -568,6 +642,8 @@ public:
             QString password = lineEdit_4->text();
             QString confirmPassword = lineEdit_5->text();
             QString quanxian = comboBox->currentText();
+            QString N ="1";
+            QString otp = lineEdit_14->text();
 
 
             QRegularExpression regex("^(?=.*[A-Za-z]).{6,}$");  // 正则表达式
@@ -577,7 +653,7 @@ public:
                 if (password != confirmPassword) {
                     QMessageBox::warning(nullptr, "Registration Failed", "Passwords do not match.");
                 }
-                else if (registerUser(db, username, password, confirmPassword, quanxian)) {
+                else if (registerUser(db, username, password, confirmPassword, quanxian,N,otp)) {
                     QMessageBox::information(nullptr, "Registration Success", "Registration success!");
                 }
                 else {
@@ -588,9 +664,6 @@ public:
             else {
                 QMessageBox::warning(this, "\u63d0\u793a", "\u5bc6\u7801\u683c\u5f0f\u4e0d\u6b63\u786e\uff01\u8bf7\u786e\u4fdd\u5bc6\u7801\u81f3\u5c11 6 \u4f4d\u5e76\u5305\u542b\u5b57\u6bcd\u3002");
             }
-
-
-
         }
     }
 

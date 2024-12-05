@@ -9,6 +9,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTextStream>
+#include <QTimer>
 #include <QDebug>
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -17,7 +18,6 @@
 #include <QtSql/QSqlError>
 
 
-QMap<QString, QPair<QString, int>> otpStorage;
 QMap<QTcpSocket*, QDateTime> clientConnectionTimes;
 
 Widget::Widget(QWidget *parent)
@@ -85,20 +85,17 @@ QString Widget::generateHOTP(const QString &secret, int counter) {
 
 
 
-void Widget::storeOTP(const QString &userId, const QString &otp, int counter) {
-    otpStorage[userId] = qMakePair(otp, counter);
+void Widget::storeOTP(QSqlDatabase& db, const QString &username, const QString &otp, int counter) {
+    QSqlQuery query(db);
+    QString hashedPassword = QCryptographicHash::hash(otp.toUtf8(), QCryptographicHash::Sha256).toHex();
+    QString sql = "UPDATE Table_3 SET N = :N , otp = :otp WHERE Username = :username";
+    query.prepare(sql);
+    query.bindValue(":username", username);
+    query.bindValue(":N", counter);
+    query.bindValue(":otp", hashedPassword);
 }
 
-bool Widget::verifyOTP(const QString &userId, const QString &otp) {
-    if (otpStorage.contains(userId)) {
-        QPair<QString, int> otpData = otpStorage[userId];
-        if (otpData.first == otp) {
-            otpStorage.remove(userId); // OTP used, remove it
-            return true;
-        }
-    }
-    return false;
-}
+
 
 void Widget::onNewConnection()
 {
@@ -117,19 +114,32 @@ void Widget::onReadyRead()
 {
     QTextStream in(clientSocket);
     QString request = in.readLine().trimmed();
-
+    QString admin;
     if (request == "CLIENT_TIME") {
         QString clientTimeStr = in.readLine().trimmed();
         QDateTime clientTime = QDateTime::fromString(clientTimeStr, "yyyy-MM-dd HH:mm:ss");
         if (clientTime.isValid()) {
+            QDateTime serverTime = QDateTime::currentDateTime();
+            qint64 timeDiffInSeconds = clientTime.secsTo(serverTime);
+            if (timeDiffInSeconds <= 60){
             QString logMessage = QString("客户端时间: %1").arg(clientTime.toString(Qt::ISODate));
             appendToTextEdit(logMessage);
-            // 这里可以添加处理时间的逻辑，比如发送回服务器或其他操作
-        } else {
-            QString logMessage = "Received invalid client time format.";
-            appendToTextEdit(logMessage);
+            }
+            else{
+                QString logMessage2 = "客户端时间与服务器时间相差超过一分钟，拒绝连接。";
+                appendToTextEdit(logMessage2);
+                }
         }
-    } else if (request.startsWith("USERNAME:")) {
+        else{
+            QString logMessage3 = "Received invalid client time format.";
+            appendToTextEdit(logMessage3);
+        }
+    }else if(request.startsWith("GETOTP:")){
+        QStringList parts3 = request.split(":", Qt::SkipEmptyParts);
+        QString username3 = parts3[1];
+        onGenerateOtpClicked(username3);
+    }
+    else if (request.startsWith("USERNAME:")) {
         QStringList parts = request.split(":", Qt::SkipEmptyParts);
         if (parts.size() == 3) { // 正确的格式应该是 "USERNAME:<username>:<password>"
             QString username = parts[1];
@@ -150,11 +160,23 @@ void Widget::onReadyRead()
             QString password2 = parts2[3];
             QString otp = parts2[1];
             int authenticated = loginManager(db, username2, password2);
-            if(verifyOTP(username2,otp)){
+            if(verifyOTP(db,username2,otp)){
                 QTextStream out(clientSocket);
                 out << "OTP:" << (authenticated) << "\n";
                 out.flush();
             }
+            if(authenticated==1){
+                admin = "安全管理员";
+            }
+            else if(authenticated==2){
+                admin = "日志管理员";
+            }
+            else if(authenticated==3){
+                admin = "普通用户";
+            }
+            QString logMessage2 = QString("客户端信息: %1:%2 - Authenticated: %3")
+                                     .arg(username2).arg(password2).arg(admin);
+            appendToTextEdit(logMessage2);
         }
     }
     else {
@@ -169,6 +191,24 @@ void Widget::onDisconnected()
     clientSocket = nullptr;
     clientConnectionTimes.remove(clientSocket);
 }
+
+bool Widget::verifyOTP(QSqlDatabase& db,const QString &username, const QString &otp) {
+    QSqlQuery query(db);
+    QString hashedPassword = QCryptographicHash::hash(otp.toUtf8(), QCryptographicHash::Sha256).toHex();
+    QString sql = "SELECT otp FROM Table_3 WHERE Username = :username";
+    query.prepare(sql);
+    query.bindValue(":username", username);
+
+    if (!query.exec() || !query.next()) {
+        qDebug() << "Error: User login failed. User not found or query error." << query.lastError().text();
+        return false;
+    }
+    QString storedHashedPassword = query.value(0).toString();
+    if (hashedPassword == storedHashedPassword) {
+        return true;
+    }
+}
+
 
 int Widget::loginManager(QSqlDatabase& db, const QString& username, const QString& password) {
     QSqlQuery query(db);
@@ -192,6 +232,9 @@ int Widget::loginManager(QSqlDatabase& db, const QString& username, const QStrin
         if(userquanxian == "LogAdministrator"){
             return 2;
         }
+        if(userquanxian == "User"){
+            return 3;
+        }
     }
 
 
@@ -200,7 +243,9 @@ int Widget::loginManager(QSqlDatabase& db, const QString& username, const QStrin
 
 void Widget::onGenerateOtpClicked(QString userid)
 {
-    QString secret = "123456"; // 替换为您的秘密密钥
+    QDateTime registrationTime = QDateTime::currentDateTime();
+    //QString secret = registrationTime.toString("yyyy-MM-dd HH:mm:ss"); // 替换为您的秘密密钥
+    QString secret = "123456";
     currentCounter++; // 增加计数器
     QString randomNumber = generateRandomNumber(); // 生成随机数R
 
@@ -208,7 +253,7 @@ void Widget::onGenerateOtpClicked(QString userid)
 
     // 存储OTP信息（这里仅作为示例，实际应用中可能需要更安全的存储方式）
     // 注意：这里不存储OTP本身，只存储用于验证的N和R（或生成的哈希值）
-    storeOTP(userid,otp, currentCounter);  // 如果需要存储OTP，可以使用这个函数
+    storeOTP(db,userid,otp, currentCounter);  // 如果需要存储OTP，可以使用这个函数
 
     // 更新UI
     updateUiWithOtpInfo(currentCounter, randomNumber);

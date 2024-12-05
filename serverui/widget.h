@@ -28,8 +28,8 @@ public:
 
 private slots:
     QString generateHOTP(const QString &secret, int counter);
-    void storeOTP(const QString &userId, const QString &otp, int counter);
-    bool verifyOTP(const QString &userId, const QString &otp);
+    void storeOTP(QSqlDatabase& db, const QString &username, const QString &otp, int counter);
+
     void onNewConnection();
     void onReadyRead();
     void onDisconnected();
@@ -46,6 +46,7 @@ private:
 
     QSqlDatabase db;
     int loginManager(QSqlDatabase& db, const QString& username, const QString& password);
+    bool verifyOTP(QSqlDatabase& db,const QString &username, const QString &otp);
     int currentCounter;
 };
 #endif // WIDGET_H
