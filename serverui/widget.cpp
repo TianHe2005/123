@@ -25,8 +25,6 @@ Widget::Widget(QWidget *parent)
     , ui(new Ui::Widget)
     , tcpServer(new QTcpServer(this))
     , clientSocket(nullptr)
-    , currentCounter(0)
-
 {
     ui->setupUi(this);
     if (!tcpServer->listen(QHostAddress::Any, 12345)) {
@@ -93,9 +91,39 @@ void Widget::storeOTP(QSqlDatabase& db, const QString &username, const QString &
     query.bindValue(":username", username);
     query.bindValue(":N", counter);
     query.bindValue(":otp", hashedPassword);
+    if (!query.exec()) { // 检查查询是否成功执行
+        qDebug() << "Failed to update OTP:" << query.lastError().text();
+        // 这里可以添加更多的错误处理逻辑，比如重试连接、记录日志等
+    } else {
+        qDebug() << "OTP updated successfully.";
+    }
 }
 
 
+bool Widget::verifyOTP(QSqlDatabase& db, const QString &username, const QString &otp) {
+    QSqlQuery query(db);
+    QString hashedPassword = QCryptographicHash::hash(otp.toUtf8(), QCryptographicHash::Sha256).toHex();
+    QString sql = "SELECT otp FROM Table_3 WHERE Username = :username";
+    query.prepare(sql);
+    query.bindValue(":username", username);
+
+    if (!query.exec()) { // 执行查询并检查是否成功
+        qDebug() << "Query failed:" << query.lastError().text();
+        return false; // 查询失败，返回false
+    }
+
+    while (query.next()) { // 检查是否有结果行
+        QString storedHashedPassword = query.value(0).toString();
+        qDebug() << "Stored hashed OTP:" << storedHashedPassword;
+        if (hashedPassword == storedHashedPassword) {
+            qDebug() << "Hashed OTP matched.";
+            return true; // 哈希密码匹配，返回true
+        }
+    }
+
+    qDebug() << "Hashed OTP did not match any stored OTP.";
+    return false; // 没有找到匹配的记录，返回false
+}
 
 void Widget::onNewConnection()
 {
@@ -137,7 +165,7 @@ void Widget::onReadyRead()
     }else if(request.startsWith("GETOTP:")){
         QStringList parts3 = request.split(":", Qt::SkipEmptyParts);
         QString username3 = parts3[1];
-        onGenerateOtpClicked(username3);
+        onGenerateOtpClicked(db,username3);
     }
     else if (request.startsWith("USERNAME:")) {
         QStringList parts = request.split(":", Qt::SkipEmptyParts);
@@ -147,7 +175,7 @@ void Widget::onReadyRead()
 
             int authenticated = loginManager(db, username, password);
             if(authenticated!=0){
-                onGenerateOtpClicked(username);
+                onGenerateOtpClicked(db,username);
             }
         } else {
             QString unknownMessage = QString("收到格式错误的登录请求: %1").arg(request);
@@ -156,27 +184,29 @@ void Widget::onReadyRead()
     }   else if(request.startsWith("OTP:")){
         QStringList parts2 = request.split(":", Qt::SkipEmptyParts);
         if (parts2.size() == 4){
+            QString otp = parts2[1];
             QString username2 = parts2[2];
             QString password2 = parts2[3];
-            QString otp = parts2[1];
+
             int authenticated = loginManager(db, username2, password2);
             if(verifyOTP(db,username2,otp)){
                 QTextStream out(clientSocket);
                 out << "OTP:" << (authenticated) << "\n";
                 out.flush();
+                if(authenticated==1){
+                    admin = "安全管理员";
+                }
+                else if(authenticated==2){
+                    admin = "日志管理员";
+                }
+                else if(authenticated==3){
+                    admin = "普通用户";
+                }
+                QString logMessage2 = QString("客户端信息: %1:%2 - Authenticated: %3")
+                                          .arg(username2).arg(password2).arg(admin);
+                appendToTextEdit(logMessage2);
             }
-            if(authenticated==1){
-                admin = "安全管理员";
-            }
-            else if(authenticated==2){
-                admin = "日志管理员";
-            }
-            else if(authenticated==3){
-                admin = "普通用户";
-            }
-            QString logMessage2 = QString("客户端信息: %1:%2 - Authenticated: %3")
-                                     .arg(username2).arg(password2).arg(admin);
-            appendToTextEdit(logMessage2);
+
         }
     }
     else {
@@ -192,28 +222,13 @@ void Widget::onDisconnected()
     clientConnectionTimes.remove(clientSocket);
 }
 
-bool Widget::verifyOTP(QSqlDatabase& db,const QString &username, const QString &otp) {
-    QSqlQuery query(db);
-    QString hashedPassword = QCryptographicHash::hash(otp.toUtf8(), QCryptographicHash::Sha256).toHex();
-    QString sql = "SELECT otp FROM Table_3 WHERE Username = :username";
-    query.prepare(sql);
-    query.bindValue(":username", username);
 
-    if (!query.exec() || !query.next()) {
-        qDebug() << "Error: User login failed. User not found or query error." << query.lastError().text();
-        return false;
-    }
-    QString storedHashedPassword = query.value(0).toString();
-    if (hashedPassword == storedHashedPassword) {
-        return true;
-    }
-}
 
 
 int Widget::loginManager(QSqlDatabase& db, const QString& username, const QString& password) {
     QSqlQuery query(db);
     QString hashedPassword = QCryptographicHash::hash(password.toUtf8(), QCryptographicHash::Sha256).toHex();
-    QString sql = "SELECT password,time,quanxian FROM Table_3 WHERE Username = :username";
+    QString sql = "SELECT password,time,quanxian FROM Table_3 WHERE username = :username";
     query.prepare(sql);
     query.bindValue(":username", username);
     query.bindValue("time", QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
@@ -241,27 +256,48 @@ int Widget::loginManager(QSqlDatabase& db, const QString& username, const QStrin
     return 0;
 }
 
-void Widget::onGenerateOtpClicked(QString userid)
+void Widget::onGenerateOtpClicked(QSqlDatabase& db,const QString &username)
 {
     QDateTime registrationTime = QDateTime::currentDateTime();
     //QString secret = registrationTime.toString("yyyy-MM-dd HH:mm:ss"); // 替换为您的秘密密钥
     QString secret = "123456";
-    currentCounter++; // 增加计数器
-    QString randomNumber = generateRandomNumber(); // 生成随机数R
+    QSqlQuery query(db);
+    QString sql = "SELECT N FROM Table_3 WHERE Username = :username";
+    query.prepare(sql);
+    query.bindValue(":username", username);
+    if (query.exec()) { // 执行查询
+        while (query.next()) { // 检查是否有结果行
+            QString counter = query.value(0).toString(); // 获取第一列的值
+            qDebug() << counter; // 输出值
+            // 注意：如果查询返回多行，这里的代码将只输出第一行的值。
+            // 如果需要处理多行，请将这段代码放在 while 循环内部。
 
-    QString otp = generateHOTP(secret, currentCounter); // 使用N和秘密密钥生成OTP
+            bool ok;
+            int currentCounter = counter.toInt(&ok);
+            if (!ok) {
+                // 转换失败，处理错误
+                qDebug() << "Conversion failed, counter value was not a valid integer.";
+                // 你可以设置 currentCounter 为一个默认值或者进行其他错误处理
+                currentCounter = -1; // 或者其他适当的默认值
+            }
+            QString randomNumber = generateRandomNumber(); // 生成随机数R
+            currentCounter++;
+            QString otp = generateHOTP(secret, currentCounter); // 使用N和秘密密钥生成OTP
+            storeOTP(db,username, otp, currentCounter);  // 如果需要存储OTP，可以使用这个函数
 
-    // 存储OTP信息（这里仅作为示例，实际应用中可能需要更安全的存储方式）
-    // 注意：这里不存储OTP本身，只存储用于验证的N和R（或生成的哈希值）
-    storeOTP(db,userid,otp, currentCounter);  // 如果需要存储OTP，可以使用这个函数
+            // 更新UI
+            updateUiWithOtpInfo(currentCounter, randomNumber);
+            // 可以在这里添加将OTP发送给用户的逻辑
+            QTextStream out(clientSocket);
+            out << "USERNAME:" << otp;
+            out.flush();
 
-    // 更新UI
-    updateUiWithOtpInfo(currentCounter, randomNumber);
+        }
+    } else {
+        qDebug() << "Query failed:" << query.lastError().text(); // 输出错误信息
+    }
 
-    // 可以在这里添加将OTP发送给用户的逻辑
-    QTextStream out(clientSocket);
-    out << "USERNAME:" << otp;
-    out.flush();
+
 }
 
 QString Widget::generateRandomNumber()
